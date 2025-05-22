@@ -2,3 +2,6 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# Large files exceed git limits and have the .rds extension 
+*.rds
