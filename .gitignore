@@ -5,3 +5,6 @@
 
 # Large files exceed git limits and have the .rds extension 
 *.rds
+
+# Don't include pdfs
+*.pdf
