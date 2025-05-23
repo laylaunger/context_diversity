@@ -1,3 +1,9 @@
+# Title: Degree & Divergence
+# Author: Layla Unger
+# Last Updated: 2025-05-22
+# R version: 4.3.2
+# Packages: readr, plyr, dplyr, data.table, tidyr, tidytext, purrr, stringr, topicmodels, philentropy
+
 #####################################################
 #################### DESCRIPTION ####################
 #####################################################
@@ -10,14 +16,21 @@
 # English, Spanish, French, or German.
 
 # Prior to running this script, you should ensure that you
-# have: (1) files containing preprocessed corpus for
-# each language, (2) files containing age of acquisition
-# data for each language, and (3) a file containing a list
+# have: the following directories from the github repository:
+# data/mcdi_files: files containing age of acquisition
+# data for each language,
+# data/names_file: a file containing a list
 # of common first names that will be replaced with a 
 # common token.
 
 # To run this script, you need to specify the language
-# corpus below. 
+# corpus below. You can also set parameters for calculating
+# the contextual diversity measures.
+
+# There are points within the script where there is code
+# to save intermediate outputs to .rds files. Once you
+# have run these lines, you can comment them out and
+# uncomment the lines that load the .rds files.
 
 
 #####################################################
@@ -26,26 +39,16 @@
 
 # Install any packages not yet installed
 
+library(readr)
 library(plyr)
 library(dplyr)
 library(data.table)
 library(tidyr)
-library(widyr)
 library(tidytext)
 library(purrr)
-
 library(stringr)
-
-library(ggplot2)
-library(ggpubr)
-library(cowplot)
-
-library(proxyC)
 library(topicmodels)
-library(lexicon)
 library(philentropy)
-library(textdata)
-library(text2vec)
 
 
 #####################################################
@@ -53,34 +56,68 @@ library(text2vec)
 #####################################################
 
 # ---- SPECIFY HERE ---- #
+
 # Specify the language: english, spanish, french or german
 # Uncomment the line for the corresponding language
-# language <- "english"
+
+language <- "english"
 # language <- "spanish"
 # language <- "french"
-language <- "german"
+# language <- "german"
 
+
+#####################################################
+################ SPECIFY PARAMETERS #################
+#####################################################
+
+# ---- SPECIFY HERE ---- #
+
+# Set thresholds for moving low frequency words: 
+freq_cutoff <- 6 # Threshold for overall frequency
+trans_cutoff <- 3 # Threshold for number of transcripts in which word appears
+corp_cutoff <- 2 # Threshold for number of corpora in which word appears
+
+# The degree measure of diversity calculates how many words
+# a word co-occurs with within a specified window size. This
+# script will calculate degree in multiple window sizes. Specify
+# the window sizes to use here. 
+window_sizes <- c(5, 11, 21)
+
+#####################################################
+############## SPECIFY LANGUAGE FILES ###############
+#####################################################
 
 # These lines will select the corpus and age of acquisition files for
 # the specified language.
-corpus_files <- list.files(pattern = "CHILDES Text - Lemmatized -", recursive = TRUE, full.names = TRUE)
-mcdi_aoa_files <- list.files(pattern = "MCDI_AoA", recursive = TRUE, full.names = TRUE)
 
-corpus_language <- corpus_files[grepl(language, corpus_files)]
-mcdi_language <- mcdi_aoa_files[grepl(language, mcdi_aoa_files)]
+# The corpora are available to load from an online repository. All
+# urls follow the same naming convention and specify the language.
+# This code uses the language specified above to get the url and load
+# the corpus
+corpus_url <- paste("https://language-corpora-childes.s3.us-east-2.amazonaws.com/childes_lemmatized_", language, ".rds", sep = "")
+
+
+# MCDI AoA data are saved in the data folder. Get all MCDI
+# AoA files and specify just the one for the specified language
+mcdi_aoa_paths <- list.files(pattern = "MCDI_AoA", recursive = TRUE, full.names = TRUE)
+mcdi_aoa_file <- mcdi_aoa_paths[grepl(language, mcdi_aoa_paths)]
 
 #####################################################
 ################# GET COMMON NAMES ##################
 #####################################################
 
-names_to_replace <- readRDS("names_file/CHILDES Names.rds")
+# The data folder contains a file with a list of common names
+# (e.g, Alice, Harry) that appear in the corpora. These will be
+# replaced with a common token later in the script.
+names_file <- list.files(pattern = "names", recursive = TRUE, full.names = TRUE)
+names_to_replace <- readRDS(names_file)
 
 #####################################################
 ############ SET NAMES OF OUTPUT FILES ##############
 #####################################################
 
 # Create a directory (folder) in which to store the contextual diversity measures
-path_to_diversity <- "context_diversity"
+path_to_diversity <- "data/context_diversity"
 if (!dir.exists(path_to_diversity)) dir.create(path_to_diversity)
 
 # These lines generate names for the files that will contain 
@@ -107,7 +144,7 @@ multi_file <- paste(path_to_diversity, "/childes_multi_total_", language, ".rds"
 
 
 # The version with stop words included:
-childes_text <- readRDS(file = corpus_language)
+childes_text <- readRDS(url(corpus_url))
 
 # The next steps identify rare words and words that only occur in 
 # very few transcripts or corpora (e.g., one family talked a lot
@@ -133,12 +170,7 @@ childes_doc_count <- childes_unnested %>%
                    corp_count = length(unique(corpus_id)))
 
 
-# Set thresholds for moving low frequency words: words that 
-# are low frequency overall, words that only occur in a few
-# transcripts, and words that only occur in a few corpora
-freq_cutoff <- 6
-trans_cutoff <- 3
-corp_cutoff <- 2
+
 
 low_freq <- childes_freq$word[childes_freq$freq <= freq_cutoff]
 low_trans <- childes_doc_count$word[childes_doc_count$trans_count <= trans_cutoff]
@@ -174,15 +206,14 @@ childes_text_shuffled <- childes_unnested_shuffled %>%
   dplyr::ungroup()
 
 
-# Choose windows to calculate measures that use sliding windows
-window_sizes <- c(5, 11, 21)
+
 
 #####################################################
 ################## LOAD MCDI DATA ###################
 #####################################################
 
 # Load age of acquisition data (calculated from MCDI data)
-mcdi_aoa <- read.csv(mcdi_language)
+mcdi_aoa <- read_csv(mcdi_aoa_file, show_col_types = FALSE)
 
 
 #####################################################
@@ -320,8 +351,8 @@ gen_degree <- function(window_size, input_corpus) {
 
 # Calculate degree across all window sizes for both the original and shuffled corpora,
 # then combine
-childes_degree <- ldply(window_sizes, gen_degree, input_corpus = childes_text)
-childes_degree_shuffled <- ldply(window_sizes, gen_degree, input_corpus = childes_text_shuffled)
+childes_degree <- purrr::map_dfr(window_sizes, ~gen_degree(.x, input_corpus = childes_text))
+childes_degree_shuffled <- purrr::map_dfr(window_sizes, ~gen_degree(.x, input_corpus = childes_text_shuffled))
 
 childes_degree_total <- left_join(childes_degree, childes_degree_shuffled)
 
@@ -343,23 +374,24 @@ saveRDS(childes_degree_total, degree_file)
 # Here, we are treating individual CHILDES transcripts as documents.
 
 gen_dtm <- function(input_corpus) {
-  
+
   childes_doc_term <- input_corpus %>%
     dplyr::group_by(id) %>%
     dplyr::count(word, name = "count")
-  
-  
+
+
   # There is a special format for document-term-matrices used
   # by LDA functions. We can convert our matrix into this
   # format using cast_dtm
   childes_dtm <- childes_doc_term %>%
     cast_dtm(id, word, count)
-  
+
   return(childes_dtm)
 }
 
 childes_dtm <- gen_dtm(childes_unnested)
 childes_dtm_shuffled <- gen_dtm(childes_unnested_shuffled)
+
 
 # Conduct LDA to identify a specified set of latent "topics"
 # The LDA function below creates an object that includes both:
@@ -371,6 +403,7 @@ childes_dtm_shuffled <- gen_dtm(childes_unnested_shuffled)
 # If you've already run it, comment-out the childes_lda and
 # saveRDS lines, and un-comment the readRDS to read in the
 # stored files. 
+
 childes_lda <- LDA(childes_dtm, k = 25, control = list(seed = 1234))
 saveRDS(childes_lda, LDA_file)
 
@@ -380,8 +413,11 @@ saveRDS(childes_lda_shuffled, LDA_shuffled_file)
 # childes_lda <- readRDS(LDA_file)
 # childes_lda_shuffled <- readRDS(LDA_shuffled_file)
 
-# The code below implements this calculation, with two exceptions due
-# to the fact that Roy et al. were analyzing input to a single 
+# The code below implements Roy et al.'s calculation of
+# divergence - i.e., the extent to which a word occurs in a 
+# wider range of topics than the overall baseline distribution.
+# There are two differences here from the original calculation
+# because Roy et al. were analyzing input to a single 
 # child, whereas we're using CHILDES:
 # (1) Calculate across all corpora, not just those before age
 #     of first production, because we do not know the age of

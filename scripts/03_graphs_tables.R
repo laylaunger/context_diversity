@@ -1,13 +1,22 @@
+# Title: Degree & Divergence
+# Author: Layla Unger
+# Last Updated: 2025-05-23
+# R version: 4.3.2
+# Packages: dplyr, tidyr, purrr, stringr, scam, ggplot2, cowplot, ggrepel, grid, gridExtra, patchwork, scales
+
 #####################################################
 #################### DESCRIPTION ####################
 #####################################################
 
-# This script generates the tables and graphs in the
-# manuscript.
+# Use this script after the 02_predict_aoa.R script.
 
-# Use this script after running the code in the 
-# Context Diversity - Predict AoA.R script. 
-
+# This script generates the following tables and graphs:
+# A comparison of the words analyzed in this project and related
+# prior studies
+# A table and graphs of the relationship between contextual 
+# diversity and frequency
+# Graphs of the relationship between contextual diversity and
+# word learning
 
 #####################################################
 ################### LOAD PACKAGES ###################
@@ -29,12 +38,41 @@ library(ggrepel)
 library(patchwork)
 library(scales)
 
+#####################################################
+#################### LOAD DATA ######################
+#####################################################
+
+# Load data for contextual diversity and its relationship with
+# word learning
+
+diversity_file <- here::here("data", "context_diversity", "diversity.rds")
+diversity_control_file <- here::here("data", "context_diversity", "diversity_control.rds")
+
+diversity <- readRDS(diversity_file)
+diversity_control <- readRDS(diversity_control_file)
+
+
+#####################################################
+################# FORMAT VARIABLES ##################
+#####################################################
+
+# Format variables for plotting.
+
+diversity_control <- diversity_control %>%
+  dplyr::mutate(sign = factor(sign, levels = c("positive", "negative")),
+                correction = factor(correction, levels = c("uncorrected", "freq", "shuffle", "both")),
+                language = factor(language, levels = c("english", "spanish", "french", "german")),
+                measure = factor(measure, levels = c("degree", "divergence"))
+                )
+
+levels(diversity_control$measure) <- c("Degree", "Divergence")
 
 #####################################################
 ############ DIRECTORY FOR SAVING FILES #############
 #####################################################
 
 # Create a directory for saving files 
+
 path_figures_tables <- "figures_tables"
 if (!dir.exists(path_figures_tables)) dir.create(path_figures_tables)
 
@@ -42,14 +80,28 @@ if (!dir.exists(path_figures_tables)) dir.create(path_figures_tables)
 ########## DISTRIBUTION OF LEXICAL CLASSES ##########
 #####################################################
 
+# This project tackles a conflict between two prior studies:
+# Hills et al. (2010), which showed that children learn words
+# more easily when they appear in diverse contexts, and Roy et.
+# al. (2015), which showed that children learn words more easily
+# when they appear in consistent contexts.
+
+# For the sake of comparison, this section contrasts the sets
+# of words that were analyzed in those prior studies and in this
+# project. Here, we contrast the number of words in lexical classes
+# (e.g., nouns, verbs, etc.)
+
+
 # Numbers of words in lexical classes in Hills et al. (2010),
+# taken from the paper.
 classes_hills <- data.frame(language = "Hills",
                             lexical_class = c("nouns", "verbs", 
                                               "adjectives", "function_words"),
                             N = c(330,96,58,88))
 
 
-# Numbers of words in lexical classes in Roy et al (2015)
+# Numbers of words in lexical classes in Roy et al (2015),
+# taken from the paper.
 classes_roy <- data.frame(language = "Roy",
                           lexical_class = c("adjectives", "function_words", 
                                             "nouns", "other", "verbs"),
@@ -59,15 +111,15 @@ classes_roy <- data.frame(language = "Roy",
 # Get numbers of words in lexical classes across languages 
 # in present study
 classes <- aoa_resid %>%
-  dplyr::select(language, lexical_class, word) %>%
+  dplyr::select(language, lexical_class, lemma) %>%
   dplyr::distinct() %>%
   group_by(language, lexical_class) %>%
-  dplyr::summarise(N = length(word))
+  dplyr::summarise(N = length(lemma))
 
 # Combine classes across studies
 classes <- rbind(classes, classes_hills, classes_roy)
 
-# Calculate percentages
+# Calculate percentages of words in each class
 classes <- classes %>%
   group_by(language) %>%
   dplyr::mutate(percent = N / sum(N) )
@@ -76,6 +128,7 @@ classes <- classes %>%
 classes$language <- factor(classes$language, levels = c("Hills", "Roy", 
                                                         "english", "spanish",
                                                         "french", "german"))
+
 classes$lexical_class <- factor(classes$lexical_class, levels = c("nouns", "verbs",
                                                                   "adjectives", "function_words", 
                                                                   "other"))
@@ -102,7 +155,7 @@ classes_plot <- ggplot(classes, aes(x=language, y=percent, fill=lexical_class)) 
 classes_plot
 
 # Export to file
-lexical_classes_file <- paste(path_figures_tables, "/Lexical Classes.pdf")
+lexical_classes_file <- paste(path_figures_tables, "/Lexical Classes.pdf", sep = "")
 
 pdf(file = lexical_classes_file,
     height = 4.25, width = 5)
@@ -113,8 +166,16 @@ dev.off()
 ############## DIVERSITY AND FREQUENCY ##############
 #####################################################
 
+# ---------- TABLES SHOWING RELATIONSHIP ---------- #
+
+# Generate tables that show the relationship between diversity
+# measures and frequency.
+
+# This function computes the variance in a diversity measure that
+# is accounted for by frequency (based on )
 diversity_frequency_var <- function(input_language_window, measure) {
 
+  input_language_window <- as.data.frame(input_language_window)
   # Get the name of the column containing the values from the shuffled corpus
   measure_shuffled <- paste(measure, "shuffled", sep = "_")
 
@@ -130,8 +191,21 @@ diversity_frequency_var <- function(input_language_window, measure) {
   return(var_explained)
 }
 
-degree_table <- ddply(diversity[diversity$window_size == 5,], .(language), diversity_frequency_var, measure = "degree")
-divergence_table <- ddply(diversity[diversity$window_size == 5,], .(language), diversity_frequency_var, measure = "divergence")
+degree_table <- diversity %>%
+  dplyr::filter(window_size == 5) %>%
+  group_by(language) %>%
+  group_modify(~ {
+    input <- bind_cols(.y, .x)  # add grouping vars back
+    diversity_frequency_var(input, measure = "degree")
+  })
+
+divergence_table <- diversity %>%
+  dplyr::filter(window_size == 5) %>%
+  group_by(language) %>%
+  group_modify(~ {
+    input <- bind_cols(.y, .x)  # add grouping vars back
+    diversity_frequency_var(input, measure = "divergence")
+  })
 
 diversity_table <- rbind(degree_table, divergence_table)
 
@@ -141,13 +215,23 @@ diversity_table <- diversity_table %>%
   pivot_wider(names_from = "measure", values_from = c("log_freq", "shuffled")) %>%
   dplyr::select(language, log_freq_degree, shuffled_degree, log_freq_divergence, shuffled_divergence)
 
+# Look:
+diversity_table
+
+# Format for pasting into LaTex document
 diversity_table_latex <- diversity_table %>% unite(line, sep = " & ")
 paste(diversity_table_latex$line, collapse = " \\ ")
 
 
 # ----------- PLOT EXAMPLE RELATIONSHIP ----------- #
 
-input_language_window <- diversity[diversity$language == "english" & diversity$window_size == 5, ]
+# Plot an example of the relationship between frequency
+# and the degree measure of diversity in English
+
+# Specify data to plot in example 
+input_language_window <- diversity %>%
+  dplyr::filter(language == "english" & window_size == 5)
+
 measure = "degree"
 
 # This function generates plots of the relationship between diversity
@@ -198,12 +282,17 @@ vis_resid_window <- function(input_language_window, measure) {
   # (i.e., higher diversity than predicted by frequency), and
   # an example with negative residual variance (i.e., lower diversity
   # than predicted by frequency) 
-  pos_to_label <- ddply(correction[!(correction$word %in% c("i", "vagina")),], .(lexical_class), summarise,
-                        resid_max = max(resid),
-                        word_label = sample(word[resid == resid_max], 1))
-  neg_to_label <- ddply(correction[!(correction$word %in% c("i", "vagina")),], .(lexical_class), summarise,
-                        resid_min = min(resid),
-                        word_label = sample(word[resid == resid_min], 1))
+  pos_to_label <- correction %>%
+    dplyr::filter(!(word %in% c("i", "vagina"))) %>%
+    group_by(lexical_class) %>%
+    dplyr::summarise(resid_max = max(resid),
+                     word_label = sample(word[resid == resid_max], 1))
+  
+  neg_to_label <- correction %>%
+    dplyr::filter(!(word %in% c("i", "vagina"))) %>%
+    group_by(lexical_class) %>%
+    dplyr::summarise(resid_min = min(resid),
+                     word_label = sample(word[resid == resid_min], 1))
   
   # Add a column with just the example words
   correction$label <- ifelse(correction$word %in% pos_to_label$word_label | correction$word %in% neg_to_label$word_label,
@@ -258,7 +347,7 @@ divergence_vis_resid <- vis_resid_window(input_language_window = diversity[diver
 plot_grid(degree_vis_resid, divergence_vis_resid, nrow = 2)
 
 # Export to file
-diversity_frequency_file <- paste(path_figures_tables, "/Diversity and Frequency.pdf")
+diversity_frequency_file <- paste(path_figures_tables, "/Diversity and Frequency.pdf", sep = "")
 
 pdf(file = diversity_frequency_file,
     height = 8, width = 9)
@@ -330,11 +419,15 @@ vis_diversity_vs_control <- function(input_data, amend_axis = "", add_window = F
 }
 
 # Store the plot for each window size
-diversity_vs_control <- dlply(diversity_control, 
-                              .(window_size), 
-                              vis_diversity_vs_control, add_window = TRUE)
+diversity_vs_control <- diversity_control %>%
+  group_by(window_size) %>%
+  group_split() %>%
+  set_names(map_chr(., ~ as.character(unique(.x$window_size)))) %>%
+  map(~ vis_diversity_vs_control(.x, add_window = TRUE))
 
 
+# Look at one of the plots (note that it needs a decent amount of 
+# vertical space to view the plotting region)
 plot_grid(diversity_vs_control$`5`, diversity_vs_control$`11`, diversity_vs_control$`21`,
           nrow = 3,
           labels = c("Window Size = 5", "Window Size = 11", "Window Size = 21"),
@@ -344,7 +437,7 @@ plot_grid(diversity_vs_control$`5`, diversity_vs_control$`11`, diversity_vs_cont
 # Export to file
 
 # Just window size = 5 for main text
-diversity_aoa_file <- paste(path_figures_tables, "/Diversity and AoA.pdf")
+diversity_aoa_file <- paste(path_figures_tables, "/Diversity and AoA.pdf", sep = "")
 
 pdf(file = diversity_aoa_file,
     height = 4.5, width = 9)
@@ -355,7 +448,7 @@ dev.off()
 
 
 # All windows for supplement
-diversity_aoa_windows_file <- paste(path_figures_tables, "/Diversity and AoA - Windows.pdf")
+diversity_aoa_windows_file <- paste(path_figures_tables, "/Diversity and AoA - Windows.pdf", sep = "")
 
 pdf(file = diversity_aoa_windows_file,
     height = 4*4, width = 10)
@@ -364,30 +457,3 @@ plot_grid(diversity_vs_control$`5`, diversity_vs_control$`11`, diversity_vs_cont
           labels = c("Window Size = 5", "Window Size = 11", "Window Size = 21"),
           label_size = 11)
 dev.off()
-
-
-# ---------- RESULTS USING LINEAR REGRESSION ---------- #
-
-# Store the plot for each window size
-diversity_vs_control_lin <- dlply(diversity_control_lin, 
-                                  .(window_size), 
-                                  vis_diversity_vs_control, add_window = TRUE)
-
-
-plot_grid(diversity_vs_control_lin$`5`, diversity_vs_control_lin$`11`, diversity_vs_control_lin$`21`,
-          nrow = 3,
-          labels = c("Window Size = 5", "Window Size = 11", "Window Size = 21"),
-          label_size = 11)
-
-# Export to file
-# All windows for supplement
-diversity_aoa_windows_linear_file <- paste(path_figures_tables, "/Diversity and AoA - Linear - Windows.pdf")
-
-pdf(file = diversity_aoa_windows_linear_file,
-    height = 4*4, width = 10)
-plot_grid(diversity_vs_control_lin$`5`, diversity_vs_control_lin$`11`, diversity_vs_control_lin$`21`,
-          nrow = 3,
-          labels = c("Window Size = 5", "Window Size = 11", "Window Size = 21"),
-          label_size = 11)
-dev.off()
-
