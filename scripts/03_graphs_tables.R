@@ -261,7 +261,7 @@ vis_resid_window <- function(input_language_window, measure) {
   
   # Get predicted values and residuals from the regression models
   # and store in a dataframe.
-  freq_correction <- data.frame(id_variables_freq, control_variable = "Log Freq", uncorrected, predict(freq_model), resid(freq_model))
+  freq_correction <- data.frame(id_variables_freq, control_variable = "Log Frequency", uncorrected, predict(freq_model), resid(freq_model))
   shuffle_correction <- data.frame(id_variables_shuffle, control_variable = paste(measure_name, "from Shuffled Corpus"), uncorrected, predict(shuffle_model), resid(shuffle_model))
   
   # Standardize the names of the dataframes 
@@ -330,7 +330,10 @@ vis_resid_window <- function(input_language_window, measure) {
           strip.placement = "outside",
           strip.background = element_blank(),
           legend.title.align = .5,
-          legend.spacing.y = unit(5, "point"))
+          legend.spacing.y = unit(5, "point"),
+          strip.text = element_text(size = 12),
+          axis.title = element_text(size = 12),
+          axis.text = element_text(size = 11))
   
   return(vis_plot)
   
@@ -344,13 +347,13 @@ divergence_vis_resid <- vis_resid_window(input_language_window = diversity[diver
                                          measure = "divergence")
 
 # Look:
-plot_grid(degree_vis_resid, divergence_vis_resid, nrow = 2)
+# plot_grid(degree_vis_resid, divergence_vis_resid, nrow = 2)
 
 # Export to file
 diversity_frequency_file <- paste(path_figures_tables, "/Diversity and Frequency.pdf", sep = "")
 
 pdf(file = diversity_frequency_file,
-    height = 8, width = 9)
+    height = 8.5, width = 9)
 plot_grid(degree_vis_resid, divergence_vis_resid, nrow = 2)
 dev.off()
 
