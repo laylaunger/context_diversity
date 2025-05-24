@@ -110,7 +110,8 @@ mcdi_aoa_file <- mcdi_aoa_paths[grepl(language, mcdi_aoa_paths)]
 # (e.g, Alice, Harry) that appear in the corpora. These will be
 # replaced with a common token later in the script.
 names_file <- list.files(pattern = "names", recursive = TRUE, full.names = TRUE)
-names_to_replace <- readRDS(names_file)
+names_to_replace <- readLines(names_file)
+
 
 #####################################################
 ############ SET NAMES OF OUTPUT FILES ##############
